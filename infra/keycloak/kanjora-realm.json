@@ -1,0 +1,120 @@
+{
+  "realm": "kanjora",
+  "enabled": true,
+  "roles": {
+    "realm": [
+      { "name": "USER", "description": "Usuario estándar de Kanjora" },
+      { "name": "REVIEWER", "description": "Revisor humano de mini clases y disputas del piloto" },
+      { "name": "ADMIN", "description": "Administrador de la plataforma" },
+      { "name": "INTERNAL_SESSIONS_SERVICE", "description": "Rol M2M exclusivo del servicio de Sesiones (Go)" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "kanjora-web",
+      "name": "Kanjora Angular SPA",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:4200/*"],
+      "webOrigins": ["http://localhost:4200"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "kanjora-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "kanjora-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "kanjora-roles-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "kanjora-sessions-service",
+      "name": "Kanjora Sessions Go Service (M2M)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "kanjora-sessions-dev-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "kanjora-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "kanjora-api",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "kanjora-roles-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@kanjora.local",
+      "firstName": "Alice",
+      "lastName": "Backend",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "alice_dev_pwd", "temporary": false }],
+      "realmRoles": ["USER"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@kanjora.local",
+      "firstName": "Bob",
+      "lastName": "English",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "bob_dev_pwd", "temporary": false }],
+      "realmRoles": ["USER"]
+    },
+    {
+      "username": "reviewer",
+      "email": "reviewer@kanjora.local",
+      "firstName": "Kanjora",
+      "lastName": "Reviewer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "reviewer_dev_pwd", "temporary": false }],
+      "realmRoles": ["USER", "REVIEWER"]
+    },
+    {
+      "username": "service-account-kanjora-sessions-service",
+      "enabled": true,
+      "serviceAccountClientId": "kanjora-sessions-service",
+      "realmRoles": ["INTERNAL_SESSIONS_SERVICE"]
+    }
+  ]
+}
+

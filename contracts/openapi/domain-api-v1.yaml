@@ -1,0 +1,1099 @@
+openapi: 3.1.0
+info:
+  title: Kanjora Domain API
+  version: 1.0.0
+  description: >
+    API de Dominio de Kanjora (Java / Spring Boot). Dueña de perfiles, catálogo configurable
+    de habilidades/niveles/temas, flujo de habilitación y revisión manual de mini clases,
+    matching recíproco explicable, propuestas de intercambio, validación de pareja para Go,
+    recepción idempotente de hechos de sesión y confirmación bilateral final.
+servers:
+  - url: http://localhost:8080
+    description: Entorno local de desarrollo
+
+tags:
+  - name: Catalog
+    description: Catálogo configurable de habilidades, niveles y temas (B05)
+  - name: Profiles
+    description: Perfiles de usuario y disponibilidad horaria (B05)
+  - name: Qualifications
+    description: Habilitación para enseñar en 3 pasos y revisión humana de mini clase (B06-B07)
+  - name: Matching
+    description: Emparejamiento recíproco explicable (B08)
+  - name: Proposals
+    description: Propuestas de intercambio (B09)
+  - name: Confirmations
+    description: Confirmación bilateral de cierre e historial (B15)
+  - name: Internal
+    description: Endpoints internos exclusivos para la API de Sesiones en Go (B10, B14)
+
+components:
+  securitySchemes:
+    UserBearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Access Token OIDC emitido por el IdP compartido.
+        Debe validar iss, exp, aud contiene "kanjora-api" y extraer sub como userId canónico.
+    InternalServiceAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Token de servicio M2M (OAuth2 Client Credentials) con rol ROLE_INTERNAL_SESSIONS_SERVICE.
+        Rechaza tokens de usuarios finales con 403 Forbidden.
+
+  parameters:
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Clave única (UUIDv4 o identificador único del reporte) para garantizar idempotencia.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+  schemas:
+    ProblemDetail:
+      type: object
+      description: Formato estándar RFC 9457 (application/problem+json)
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errorCode:
+          type: string
+
+    CatalogSkillResponse:
+      type: object
+      required: [skillId, slug, name, category, levels, topics]
+      properties:
+        skillId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        category:
+          type: object
+          required: [categoryId, slug, name]
+          properties:
+            categoryId:
+              type: string
+              format: uuid
+            slug:
+              type: string
+            name:
+              type: string
+        levels:
+          type: array
+          items:
+            type: object
+            required: [levelId, code, name, rankOrder]
+            properties:
+              levelId:
+                type: string
+                format: uuid
+              code:
+                type: string
+              name:
+                type: string
+              rankOrder:
+                type: integer
+        topics:
+          type: array
+          items:
+            type: object
+            required: [topicId, code, name]
+            properties:
+              topicId:
+                type: string
+                format: uuid
+              code:
+                type: string
+              name:
+                type: string
+
+    AvailabilitySlot:
+      type: object
+      required: [dayOfWeek, startTimeLocal, endTimeLocal]
+      properties:
+        dayOfWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: ISO-8601 (1=Lunes .. 7=Domingo)
+        startTimeLocal:
+          type: string
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d$"
+        endTimeLocal:
+          type: string
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d$"
+
+    LearningGoalInput:
+      type: object
+      required: [skillId, targetLevelId]
+      properties:
+        skillId:
+          type: string
+          format: uuid
+        targetLevelId:
+          type: string
+          format: uuid
+        topicIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    TeachingOfferInput:
+      type: object
+      required: [skillId, levelId]
+      properties:
+        skillId:
+          type: string
+          format: uuid
+        levelId:
+          type: string
+          format: uuid
+        topicIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UserProfileUpsertRequest:
+      type: object
+      required: [displayName, timezone, availabilitySlots, learningGoals, teachingOffers]
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 500
+        timezone:
+          type: string
+          example: America/Bogota
+        availabilitySlots:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvailabilitySlot"
+        learningGoals:
+          type: array
+          items:
+            $ref: "#/components/schemas/LearningGoalInput"
+        teachingOffers:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeachingOfferInput"
+
+    UserProfileResponse:
+      type: object
+      required: [userId, displayName, timezone, availabilitySlots, learningGoals, teachingOffers, updatedAt]
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        bio:
+          type: [string, "null"]
+        timezone:
+          type: string
+        availabilitySlots:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvailabilitySlot"
+        learningGoals:
+          type: array
+          items:
+            $ref: "#/components/schemas/LearningGoalInput"
+        teachingOffers:
+          type: array
+          items:
+            type: object
+            required: [skillId, levelId, qualificationStatus]
+            properties:
+              skillId:
+                type: string
+                format: uuid
+              levelId:
+                type: string
+                format: uuid
+              qualificationStatus:
+                type: string
+                enum: [NOT_STARTED, IN_PROGRESS, PENDING_HUMAN_REVIEW, APPROVED, REJECTED, REVOKED]
+              topicIds:
+                type: array
+                items:
+                  type: string
+                  format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateQualificationRequest:
+      type: object
+      required: [skillId, levelId, methodologyAcknowledged, practicalTestPassed]
+      properties:
+        skillId:
+          type: string
+          format: uuid
+        levelId:
+          type: string
+          format: uuid
+        methodologyAcknowledged:
+          type: boolean
+        practicalTestPassed:
+          type: boolean
+        practicalTestReference:
+          type: string
+
+    QualificationResponse:
+      type: object
+      required: [qualificationId, userId, skillId, levelId, status, methodologyAcknowledged, practicalTestPassed, attemptCount]
+      properties:
+        qualificationId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        skillId:
+          type: string
+          format: uuid
+        levelId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [IN_PROGRESS, PENDING_HUMAN_REVIEW, APPROVED, REJECTED, REVOKED]
+        methodologyAcknowledged:
+          type: boolean
+        practicalTestPassed:
+          type: boolean
+        attemptCount:
+          type: integer
+        latestSubmissionId:
+          type: [string, "null"]
+          format: uuid
+        latestReviewComments:
+          type: [string, "null"]
+        approvedAt:
+          type: [string, "null"]
+          format: date-time
+
+    MiniClassSubmissionRequest:
+      type: object
+      required: [lessonObjective, recordingOrArtifactUrl, selfCheckSummary]
+      properties:
+        lessonObjective:
+          type: string
+          minLength: 10
+          maxLength: 500
+        recordingOrArtifactUrl:
+          type: string
+          format: uri
+        selfCheckSummary:
+          type: string
+          minLength: 10
+          maxLength: 1000
+
+    MiniClassReviewRequest:
+      type: object
+      required: [decision, reviewerComments]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        reviewerComments:
+          type: string
+          minLength: 10
+          maxLength: 2000
+
+    MatchExplanation:
+      type: object
+      required: [commonWeeklyMinutes, overlappingWindows, sharedTopicsCount, summaryText]
+      properties:
+        commonWeeklyMinutes:
+          type: integer
+        overlappingWindows:
+          type: array
+          items:
+            type: string
+        sharedTopicsCount:
+          type: integer
+        summaryText:
+          type: string
+
+    MatchCandidateResponse:
+      type: object
+      required: [candidateUserId, displayName, candidateTeaches, candidateLearns, score, explanation]
+      properties:
+        candidateUserId:
+          type: string
+        displayName:
+          type: string
+        candidateTeaches:
+          type: object
+          required: [skillId, skillSlug, levelId, qualificationId]
+          properties:
+            skillId:
+              type: string
+              format: uuid
+            skillSlug:
+              type: string
+            levelId:
+              type: string
+              format: uuid
+            qualificationId:
+              type: string
+              format: uuid
+        candidateLearns:
+          type: object
+          required: [skillId, skillSlug, levelId]
+          properties:
+            skillId:
+              type: string
+              format: uuid
+            skillSlug:
+              type: string
+            levelId:
+              type: string
+              format: uuid
+        score:
+          type: number
+        explanation:
+          $ref: "#/components/schemas/MatchExplanation"
+
+    MatchSearchResponse:
+      type: object
+      required: [searchActive, hasValidMatches, emptyStateMessage, candidates]
+      properties:
+        searchActive:
+          type: boolean
+        hasValidMatches:
+          type: boolean
+        emptyStateMessage:
+          type: [string, "null"]
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchCandidateResponse"
+
+    CreateProposalRequest:
+      type: object
+      required: [recipientUserId, proposerTeachesSkillId, proposerTeachesLevelId, recipientTeachesSkillId, recipientTeachesLevelId]
+      properties:
+        recipientUserId:
+          type: string
+        proposerTeachesSkillId:
+          type: string
+          format: uuid
+        proposerTeachesLevelId:
+          type: string
+          format: uuid
+        proposerTopicCode:
+          type: string
+        recipientTeachesSkillId:
+          type: string
+          format: uuid
+        recipientTeachesLevelId:
+          type: string
+          format: uuid
+        recipientTopicCode:
+          type: string
+
+    RespondProposalRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [ACCEPT, REJECT]
+        reason:
+          type: string
+          maxLength: 500
+
+    ExchangeProposalResponse:
+      type: object
+      required: [proposalId, status, proposerUserId, recipientUserId, createdAt]
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING_RECIPIENT, ACCEPTED, REJECTED, EXPIRED, COMPLETED, PENDING_REVIEW]
+        proposerUserId:
+          type: string
+        recipientUserId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type: [string, "null"]
+          format: date-time
+
+    ParticipantValidationInfo:
+      type: object
+      required: [userId, teaches, learns]
+      properties:
+        userId:
+          type: string
+        teaches:
+          type: object
+          required: [skillId, skillSlug, levelId, topicCode, teachingQualificationId, isQualified]
+          properties:
+            skillId:
+              type: string
+              format: uuid
+            skillSlug:
+              type: string
+            levelId:
+              type: string
+              format: uuid
+            topicCode:
+              type: string
+            teachingQualificationId:
+              type: string
+              format: uuid
+            isQualified:
+              type: boolean
+        learns:
+          type: object
+          required: [skillId, levelId]
+          properties:
+            skillId:
+              type: string
+              format: uuid
+            levelId:
+              type: string
+              format: uuid
+
+    ProposalValidationResponse:
+      type: object
+      required: [proposalId, status, validForScheduling, invalidationReason, participants, recommendedGuideIds]
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING_RECIPIENT, ACCEPTED, REJECTED, EXPIRED, COMPLETED, PENDING_REVIEW]
+        validForScheduling:
+          type: boolean
+        invalidationReason:
+          type: [string, "null"]
+          enum: [null, PROPOSAL_NOT_ACCEPTED, TEACHER_QUALIFICATION_REVOKED, EXCHANGE_ALREADY_COMPLETED]
+        participants:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/ParticipantValidationInfo"
+        recommendedGuideIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ParticipantAttendanceFact:
+      type: object
+      required: [userId, connectedSeconds, disconnectionCount, observedPresence]
+      properties:
+        userId:
+          type: string
+        joinedAt:
+          type: [string, "null"]
+          format: date-time
+        leftAt:
+          type: [string, "null"]
+          format: date-time
+        connectedSeconds:
+          type: integer
+          minimum: 0
+        disconnectionCount:
+          type: integer
+          minimum: 0
+        observedPresence:
+          type: string
+          enum: [PRESENT_FULL, PRESENT_WITH_RECONNECT, ABSENT, DROPPED_MID_CALL]
+
+    SessionFactsReportRequest:
+      type: object
+      required: [factReportId, sessionId, proposalId, terminalSessionState, occurredAt, participantsAttendance, technicalIncidentObserved]
+      properties:
+        factReportId:
+          type: string
+          minLength: 8
+          maxLength: 128
+        sessionId:
+          type: string
+          format: uuid
+        proposalId:
+          type: string
+          format: uuid
+        terminalSessionState:
+          type: string
+          enum: [COMPLETED_OBSERVED, NO_SHOW_OBSERVED, ABANDONED_MID_CALL, TECHNICAL_FAILURE_OBSERVED, CANCELLED_BEFORE_START]
+        occurredAt:
+          type: string
+          format: date-time
+        participantsAttendance:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/ParticipantAttendanceFact"
+        technicalIncidentObserved:
+          type: boolean
+        incidentCode:
+          type: [string, "null"]
+
+    SessionFactsReportResponse:
+      type: object
+      required: [factReportId, proposalId, exchangeStatus, idempotentReplay]
+      properties:
+        factReportId:
+          type: string
+        proposalId:
+          type: string
+          format: uuid
+        exchangeStatus:
+          type: string
+          enum: [AWAITING_BILATERAL_CONFIRMATION, CONFIRMED, PENDING_REVIEW, CANCELLED_NO_PENALTY]
+        idempotentReplay:
+          type: boolean
+
+    BilateralConfirmationRequest:
+      type: object
+      required: [sessionId, outcomeDeclaration, bothBlocksExecuted, wouldRepeatWithPartner]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        outcomeDeclaration:
+          type: string
+          enum: [COMPLETED, INCOMPLETE_TECHNICAL_ISSUE, PARTNER_NO_SHOW, PARTNER_ABANDONED, METHODOLOGY_NOT_FOLLOWED]
+        bothBlocksExecuted:
+          type: boolean
+        learnedSkillProgressNote:
+          type: [string, "null"]
+          maxLength: 1000
+        incidentReason:
+          type: [string, "null"]
+          maxLength: 200
+        incidentDetails:
+          type: [string, "null"]
+          maxLength: 2000
+        wouldRepeatWithPartner:
+          type: boolean
+
+    BilateralConfirmationResponse:
+      type: object
+      required: [proposalId, sessionId, myConfirmationRecordedAt, partnerHasConfirmed, exchangeResolutionStatus, creditEligibilityFactRecorded]
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        myConfirmationRecordedAt:
+          type: string
+          format: date-time
+        partnerHasConfirmed:
+          type: boolean
+        exchangeResolutionStatus:
+          type: string
+          enum: [AWAITING_PARTNER_CONFIRMATION, CONFIRMED, PENDING_REVIEW]
+        creditEligibilityFactRecorded:
+          type: boolean
+
+    ExchangeHistoryItemResponse:
+      type: object
+      required: [proposalId, partnerUserId, partnerDisplayName, myTeachingSkillSlug, partnerTeachingSkillSlug, proposalStatus, createdAt]
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        sessionId:
+          type: [string, "null"]
+          format: uuid
+        partnerUserId:
+          type: string
+        partnerDisplayName:
+          type: string
+        myTeachingSkillSlug:
+          type: string
+        partnerTeachingSkillSlug:
+          type: string
+        proposalStatus:
+          type: string
+        resolutionStatus:
+          type: [string, "null"]
+        myOutcomeDeclaration:
+          type: [string, "null"]
+        myProgressNote:
+          type: [string, "null"]
+        canRepeatWithPartner:
+          type: [boolean, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: [string, "null"]
+          format: date-time
+
+    PilotMetricsResponse:
+      type: object
+      required: [profilesCompleted, qualificationsSubmitted, qualificationsApproved, proposalsCreated, proposalsAccepted, exchangesConfirmed, exchangesPendingReview, cancelledNoPenaltyCount]
+      properties:
+        profilesCompleted:
+          type: integer
+          format: int64
+        qualificationsSubmitted:
+          type: integer
+          format: int64
+        qualificationsApproved:
+          type: integer
+          format: int64
+        proposalsCreated:
+          type: integer
+          format: int64
+        proposalsAccepted:
+          type: integer
+          format: int64
+        exchangesConfirmed:
+          type: integer
+          format: int64
+        exchangesPendingReview:
+          type: integer
+          format: int64
+        cancelledNoPenaltyCount:
+          type: integer
+          format: int64
+
+paths:
+  /api/v1/catalog/skills:
+    get:
+      tags: [Catalog]
+      summary: Listar catálogo configurable de habilidades, niveles y temas (B05)
+      security:
+        - UserBearerJwt: []
+      responses:
+        "200":
+          description: Catálogo activo desde base de datos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogSkillResponse"
+        "401":
+          description: Token ausente o inválido
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/profiles/me:
+    get:
+      tags: [Profiles]
+      summary: Obtener perfil y disponibilidad del usuario autenticado (B05)
+      security:
+        - UserBearerJwt: []
+      responses:
+        "200":
+          description: Perfil del usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+        "404":
+          description: Perfil aún no creado
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+    put:
+      tags: [Profiles]
+      summary: Crear o actualizar perfil, metas, ofertas y disponibilidad (B05)
+      security:
+        - UserBearerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpsertRequest"
+      responses:
+        "200":
+          description: Perfil guardado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+        "422":
+          description: Datos inválidos (franjas solapadas o referencias fuera de catálogo)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/teaching-qualifications:
+    post:
+      tags: [Qualifications]
+      summary: Registrar o actualizar paso 1 (guía metodológica) y paso 2 (prueba práctica) por habilidad y nivel (B06)
+      security:
+        - UserBearerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQualificationRequest"
+      responses:
+        "200":
+          description: Estado de habilitación creado o actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualificationResponse"
+
+  /api/v1/teaching-qualifications/{qualificationId}/mini-class:
+    post:
+      tags: [Qualifications]
+      summary: Enviar o reintentar mini clase para revisión humana (B06-B07)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: qualificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MiniClassSubmissionRequest"
+      responses:
+        "201":
+          description: Entrega registrada en estado PENDING_HUMAN_REVIEW
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualificationResponse"
+        "403":
+          description: La postulación pertenece a otro usuario
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: Falta aprobar prueba práctica/guía o ya hay revisión pendiente
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/admin/mini-class-submissions/{submissionId}/review:
+    post:
+      tags: [Qualifications]
+      summary: Revisar manualmente una mini clase (requiere rol REVIEWER o ADMIN) (B07)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MiniClassReviewRequest"
+      responses:
+        "200":
+          description: Revisión aplicada (APPROVED o REJECTED con comentarios)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualificationResponse"
+        "403":
+          description: Usuario sin rol REVIEWER/ADMIN
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/matches:
+    get:
+      tags: [Matching]
+      summary: Buscar coincidencias recíprocas válidas y explicables (B08)
+      description: >
+        Solo propone parejas donde ambas partes están habilitadas (APPROVED) en lo que la otra busca,
+        con niveles compatibles y disponibilidad horaria común. Si no hay parejas válidas, devuelve
+        hasValidMatches=false sin inventar coincidencias débiles.
+      security:
+        - UserBearerJwt: []
+      responses:
+        "200":
+          description: Resultado del emparejamiento recíproco
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchSearchResponse"
+        "409":
+          description: El usuario actual aún no tiene ninguna habilidad habilitada para enseñar o perfil completo
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/exchange-proposals:
+    post:
+      tags: [Proposals]
+      summary: Crear propuesta de intercambio recíproco (B09)
+      security:
+        - UserBearerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProposalRequest"
+      responses:
+        "201":
+          description: Propuesta creada en PENDING_RECIPIENT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeProposalResponse"
+        "409":
+          description: Alguna de las partes no está habilitada o no existe compatibilidad recíproca
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/exchange-proposals/{proposalId}/respond:
+    post:
+      tags: [Proposals]
+      summary: Aceptar o rechazar una propuesta de intercambio (B09)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RespondProposalRequest"
+      responses:
+        "200":
+          description: Estado de la propuesta actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeProposalResponse"
+        "403":
+          description: Solo el destinatario puede responder la propuesta
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /internal/v1/exchange-proposals/{proposalId}/validation:
+    get:
+      tags: [Internal]
+      summary: Contrato 1 — Consultar habilitación y pareja válida desde Go antes de agendar (B10)
+      security:
+        - InternalServiceAuth: []
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Estado actual y habilitaciones vigentes de la pareja
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProposalValidationResponse"
+        "401":
+          description: Token de servicio ausente o inválido
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Token no pertenece al servicio interno autorizado
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404":
+          description: Propuesta no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /internal/v1/exchanges/{proposalId}/session-facts:
+    post:
+      tags: [Internal]
+      summary: Contrato 4 — Comunicar hechos observables de sesión desde Go de forma idempotente (B14)
+      security:
+        - InternalServiceAuth: []
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionFactsReportRequest"
+      responses:
+        "200":
+          description: Hechos registrados (o replay idempotente sin duplicar efectos)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionFactsReportResponse"
+        "403":
+          description: Token no pertenece al servicio interno autorizado
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404":
+          description: Propuesta no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "422":
+          description: Payload inconsistente con la pareja o con el header Idempotency-Key
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/exchanges/{proposalId}/confirmations/me:
+    put:
+      tags: [Confirmations]
+      summary: Contrato 5 — Confirmación bilateral del resultado del intercambio (B15)
+      description: >
+        Idempotente por (proposalId, sessionId, sub). Si ambos declaran COMPLETED con ambos bloques ejecutados,
+        el intercambio queda CONFIRMED y registra un hecho auditable para análisis post-piloto. Ante discrepancia o
+        incidencia, pasa a PENDING_REVIEW sin sanciones ni créditos automáticos.
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BilateralConfirmationRequest"
+      responses:
+        "200":
+          description: Confirmación registrada y estado de resolución calculado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BilateralConfirmationResponse"
+        "403":
+          description: El usuario autenticado no forma parte del intercambio
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: El intercambio aún no ha recibido reporte de cierre/hechos desde Sesiones o ya fue resuelto
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/exchanges/history/me:
+    get:
+      tags: [Confirmations]
+      summary: Consultar historial de intercambios y notas de progreso del usuario autenticado (Paso 9 / B15)
+      security:
+        - UserBearerJwt: []
+      responses:
+        "200":
+          description: Lista ordenada de intercambios propios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExchangeHistoryItemResponse"
+
+  /api/v1/admin/metrics/pilot:
+    get:
+      tags: [Confirmations]
+      summary: Métricas observables del embudo del piloto (requiere rol REVIEWER o ADMIN) (B16-B17)
+      security:
+        - UserBearerJwt: []
+      responses:
+        "200":
+          description: Totales actuales del piloto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PilotMetricsResponse"
+        "403":
+          description: Usuario sin rol REVIEWER/ADMIN
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
