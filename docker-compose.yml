@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kanjora-postgres
+    environment:
+      POSTGRES_DB: kanjora
+      POSTGRES_USER: postgres_admin
+      POSTGRES_PASSWORD: postgres_admin_dev_pwd
+    ports:
+      - "5432:5432"
+    volumes:
+      - kanjora_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init-isolation.sql:/docker-entrypoint-initdb.d/01-init-isolation.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_admin -d kanjora"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: kanjora-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_dev_pwd
+      KC_HTTP_PORT: 8180
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./infra/keycloak/kanjora-realm.json:/opt/keycloak/data/import/kanjora-realm.json:ro
+    ports:
+      - "8180:8180"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  livekit:
+    image: livekit/livekit-server:v1.7
+    container_name: kanjora-livekit
+    command: ["--dev", "--bind", "0.0.0.0"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    environment:
+      LIVEKIT_KEYS: "devkey: secret_kanjora_livekit_dev_key_min_32_chars"
+
+volumes:
+  kanjora_pgdata:
+

@@ -1,0 +1,40 @@
+# Git Ignore for Kanjora
+
+# Build Caches
+.cache/
+.gomod/
+.gobuild/
+
+# Maven (Java)
+target/
+**/target/
+*.class
+
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+services/sessions-api/sessions-api
+
+# Logs & Temp
+*.log
+tmp/
+temp/
+
+# IDE & Editors
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+
+# OS specific
+.DS_Store
+Thumbs.db
+Desktop.ini

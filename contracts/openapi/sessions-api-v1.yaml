@@ -1,0 +1,531 @@
+openapi: 3.1.0
+info:
+  title: Kanjora Sessions API
+  version: 1.0.0
+  description: >
+    API de Sesiones de Kanjora (Go). Dueña de agenda, acuerdo previo a la sesión,
+    máquina de estados de sesión, emisión de tokens LiveKit de corta duración en servidor
+    para los dos participantes autorizados y reporte idempotente de hechos hacia Java.
+servers:
+  - url: http://localhost:8081
+    description: Entorno local de desarrollo
+
+tags:
+  - name: Sessions
+    description: Agenda, acuerdo de sesión, reprogramación, cancelación y consulta de estado (B11)
+  - name: RoomAccess
+    description: Autorización de entrada a sala LiveKit (B12-B13)
+
+components:
+  securitySchemes:
+    UserBearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Access Token OIDC emitido por el IdP compartido.
+        Validado mediante JWKS; aud debe contener "kanjora-api" y sub identifica al participante.
+
+  parameters:
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Clave única (UUIDv4) obligatoria para prevenir sesiones o cambios duplicados en reintentos.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+  schemas:
+    ProblemDetail:
+      type: object
+      description: Formato estándar RFC 9457 (application/problem+json)
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errorCode:
+          type: string
+
+    SessionStatus:
+      type: string
+      enum:
+        - AWAITING_PARTNER_AGREEMENT
+        - SCHEDULED
+        - RESCHEDULE_PENDING_ACCEPTANCE
+        - IN_PROGRESS
+        - COMPLETED_OBSERVED
+        - CANCELLED
+        - NO_SHOW_OBSERVED
+        - TECHNICAL_FAILURE_OBSERVED
+        - ABANDONED_MID_CALL
+
+    SessionBlock:
+      type: object
+      required: [blockOrder, durationMinutes, teacherUserId, learnerUserId, skillSlug, topicCode]
+      properties:
+        blockOrder:
+          type: integer
+          enum: [1, 2]
+        durationMinutes:
+          type: integer
+          minimum: 10
+          maximum: 90
+        teacherUserId:
+          type: string
+        learnerUserId:
+          type: string
+        skillSlug:
+          type: string
+        topicCode:
+          type: string
+
+    ParticipantAgreementState:
+      type: object
+      required: [userId, accepted, agreementVersion]
+      properties:
+        userId:
+          type: string
+        accepted:
+          type: boolean
+        acceptedAt:
+          type: [string, "null"]
+          format: date-time
+        agreementVersion:
+          type: string
+
+    CreateSessionRequest:
+      type: object
+      required: [proposalId, scheduledStartAt, scheduledEndAt, agreementAccepted, agreementVersion]
+      properties:
+        proposalId:
+          type: string
+          format: uuid
+        scheduledStartAt:
+          type: string
+          format: date-time
+        scheduledEndAt:
+          type: string
+          format: date-time
+        agreementAccepted:
+          type: boolean
+        agreementVersion:
+          type: string
+          example: v1.0-pilot
+
+    AcceptAgreementRequest:
+      type: object
+      required: [agreementAccepted, agreementVersion]
+      properties:
+        agreementAccepted:
+          type: boolean
+        agreementVersion:
+          type: string
+          example: v1.0-pilot
+
+    RescheduleSessionRequest:
+      type: object
+      required: [newStartAt, newEndAt]
+      properties:
+        newStartAt:
+          type: string
+          format: date-time
+        newEndAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          maxLength: 500
+
+    CancelSessionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+        technicalOrEmergency:
+          type: boolean
+          default: false
+
+    CloseSessionRequest:
+      type: object
+      required: [terminalSessionState, technicalIncidentObserved]
+      properties:
+        terminalSessionState:
+          type: string
+          enum:
+            - COMPLETED_OBSERVED
+            - NO_SHOW_OBSERVED
+            - ABANDONED_MID_CALL
+            - TECHNICAL_FAILURE_OBSERVED
+        technicalIncidentObserved:
+          type: boolean
+        incidentCode:
+          type: string
+          maxLength: 64
+
+    SessionResponse:
+      type: object
+      required: [sessionId, proposalId, status, scheduledStartAt, scheduledEndAt, blocks, agreements, recommendedGuideIds]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        proposalId:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        scheduledStartAt:
+          type: string
+          format: date-time
+        scheduledEndAt:
+          type: string
+          format: date-time
+        blocks:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/SessionBlock"
+        agreements:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/ParticipantAgreementState"
+        recommendedGuideIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    RoomTokenResponse:
+      type: object
+      required: [sessionId, livekitUrl, roomName, accessToken, expiresAt, sessionStatus, activeBlocks]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        livekitUrl:
+          type: string
+        roomName:
+          type: string
+        accessToken:
+          type: string
+          description: Token JWT firmado de LiveKit con TTL máximo de 15 minutos, limitado a este usuario y sala.
+        expiresAt:
+          type: string
+          format: date-time
+        sessionStatus:
+          $ref: "#/components/schemas/SessionStatus"
+        activeBlocks:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/SessionBlock"
+
+paths:
+  /api/v1/sessions:
+    post:
+      tags: [Sessions]
+      summary: Contrato 2 — Crear sesión tras validar propuesta en Java y aceptar acuerdo inicial (B10-B11)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Sesión creada esperando aceptación del acuerdo por el segundo participante
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "200":
+          description: Respuesta idempotente por repetición de la misma Idempotency-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: JWT inválido o ausente
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Usuario autenticado no es participante de la propuesta validada por Java
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: Propuesta no válida para agendar (Java validForScheduling=false) o ya existe sesión activa
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "422":
+          description: Acuerdo no aceptado o ventana horaria inválida
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/sessions/{sessionId}:
+    get:
+      tags: [Sessions]
+      summary: Consultar detalle, estado, acuerdo y bloques de enseñanza de la sesión (B11, B13)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Detalle de sesión
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: Usuario no pertenece a la sesión
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "404":
+          description: Sesión no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/sessions/{sessionId}/agreement:
+    post:
+      tags: [Sessions]
+      summary: Aceptar acuerdo de sesión (pasa de AWAITING_PARTNER_AGREEMENT o RESCHEDULE_PENDING_ACCEPTANCE a SCHEDULED) (B11)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptAgreementRequest"
+      responses:
+        "200":
+          description: Acuerdo registrado y estado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: Usuario no pertenece a la sesión
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: La sesión está cancelada o finalizada
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/sessions/{sessionId}/reschedule:
+    patch:
+      tags: [Sessions]
+      summary: Contrato 2 — Reprogramar sesión existente sin sanción automática (B11)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RescheduleSessionRequest"
+      responses:
+        "200":
+          description: Sesión reprogramada; requiere aceptación del nuevo horario por la contraparte
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: Usuario no pertenece a la sesión
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: No se puede reprogramar una sesión en estado terminal o en curso
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/sessions/{sessionId}/cancel:
+    post:
+      tags: [Sessions]
+      summary: Cancelar sesión con aviso sin sanción automática en piloto (B11)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelSessionRequest"
+      responses:
+        "200":
+          description: Sesión cancelada y hecho reportado a Java
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: Usuario no pertenece a la sesión
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/sessions/{sessionId}/room-token:
+    post:
+      tags: [RoomAccess]
+      summary: Contrato 3 — Emitir token de corta duración para entrar a la sala LiveKit (B12)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Token de LiveKit emitido exclusivamente para el participante autenticado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomTokenResponse"
+        "401":
+          description: JWT ausente o expirado
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Tercero no autorizado intentando acceder a la sala
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: Falta aceptación del acuerdo o la sesión fue cancelada/finalizada
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "422":
+          description: Fuera de la ventana horaria permitida para entrar a sala
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/sessions/{sessionId}/close:
+    post:
+      tags: [Sessions]
+      summary: Registrar cierre observable o incidencia de la sesión y encolar reporte idempotente a Java (B14)
+      security:
+        - UserBearerJwt: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloseSessionRequest"
+      responses:
+        "200":
+          description: Sesión cerrada en estado observable y hecho encolado hacia Java
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: Usuario no pertenece a la sesión
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "409":
+          description: La sesión no está en estado SCHEDULED o IN_PROGRESS
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "422":
+          description: Estado terminal no soportado
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
