@@ -30,8 +30,8 @@ const (
 	StatusNoShowObserved          = "NO_SHOW_OBSERVED"
 	StatusTechnicalFailure        = "TECHNICAL_FAILURE_OBSERVED"
 	StatusAbandonedMidCall        = "ABANDONED_MID_CALL"
-	maxLiveKitTTL                 = 20 * time.Minute
-	earlyJoinWindow               = 10 * time.Minute
+	maxLiveKitTTL                 = 15 * time.Minute
+	earlyJoinWindow               = 15 * time.Minute
 )
 
 // ProblemError representa errores de dominio en formato RFC 9457.
@@ -512,7 +512,7 @@ func (s *SessionService) IssueRoomToken(ctx context.Context, actor, sessionID st
 	}
 	now := s.Clock().UTC()
 	if now.Before(ses.ScheduledStartAt.Add(-earlyJoinWindow)) || now.After(ses.ScheduledEndAt) {
-		return nil, newProblem(http.StatusUnprocessableEntity, "OUTSIDE_SESSION_WINDOW", "Fuera de horario", "La sala solo abre desde 10 minutos antes hasta el fin programado.")
+		return nil, newProblem(http.StatusUnprocessableEntity, "OUTSIDE_SESSION_WINDOW", "Fuera de horario", "La sala solo abre desde 15 minutos antes hasta el fin programado.")
 	}
 	updated, err := s.Repo.TransitionToInProgressAndLogToken(ctx, sessionID, actor, now)
 	if err != nil {

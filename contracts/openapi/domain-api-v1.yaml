@@ -320,11 +320,46 @@ components:
       properties:
         decision:
           type: string
-          enum: [APPROVE, REJECT]
+          enum: [APPROVE, APPROVED, REJECT, REJECTED]
         reviewerComments:
           type: string
           minLength: 10
           maxLength: 2000
+
+    PendingSubmissionResponse:
+      type: object
+      required: [submissionId, qualificationId, candidateUserId, skillId, skillSlug, levelId, levelCode, attemptNumber, lessonObjective, recordingOrArtifactUrl, selfCheckSummary, submittedAt]
+      properties:
+        submissionId:
+          type: string
+          format: uuid
+        qualificationId:
+          type: string
+          format: uuid
+        candidateUserId:
+          type: string
+        skillId:
+          type: string
+          format: uuid
+        skillSlug:
+          type: string
+        levelId:
+          type: string
+          format: uuid
+        levelCode:
+          type: string
+        attemptNumber:
+          type: integer
+        lessonObjective:
+          type: string
+        recordingOrArtifactUrl:
+          type: string
+          format: uri
+        selfCheckSummary:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
 
     MatchExplanation:
       type: object
@@ -812,6 +847,28 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
         "409":
           description: Falta aprobar prueba práctica/guía o ya hay revisión pendiente
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+
+  /api/v1/admin/mini-class-submissions/pending:
+    get:
+      tags: [Qualifications]
+      summary: Listar mini clases pendientes de revisión humana (requiere rol REVIEWER o ADMIN) (B07)
+      security:
+        - UserBearerJwt: []
+      responses:
+        "200":
+          description: Lista ordenada cronológicamente de entregas pendientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingSubmissionResponse"
+        "403":
+          description: Usuario sin rol REVIEWER/ADMIN
           content:
             application/problem+json:
               schema:

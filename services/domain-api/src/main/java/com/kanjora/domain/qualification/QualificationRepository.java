@@ -1,9 +1,11 @@
 package com.kanjora.domain.qualification;
 
 import com.kanjora.domain.qualification.QualificationDtos.MiniClassSubmissionRequest;
+import com.kanjora.domain.qualification.QualificationDtos.PendingSubmissionResponse;
 import com.kanjora.domain.qualification.QualificationDtos.QualificationResponse;
 import java.sql.Types;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -178,6 +180,43 @@ public class QualificationRepository {
                 .param("qualStatus", newQualificationStatus)
                 .param("qualificationId", qualificationId)
                 .update();
+    }
+
+    public List<PendingSubmissionResponse> findPendingSubmissions() {
+        return jdbcClient.sql("""
+                SELECT m.submission_id,
+                       m.qualification_id,
+                       tq.user_id AS candidate_user_id,
+                       tq.skill_id,
+                       sk.slug AS skill_slug,
+                       tq.level_id,
+                       sl.code AS level_code,
+                       m.attempt_number,
+                       m.lesson_objective,
+                       m.recording_or_artifact_url,
+                       m.self_check_summary,
+                       m.submitted_at
+                FROM mini_class_submissions m
+                JOIN teaching_qualifications tq ON tq.qualification_id = m.qualification_id
+                JOIN skills sk ON sk.skill_id = tq.skill_id
+                JOIN skill_levels sl ON sl.level_id = tq.level_id
+                WHERE m.review_status = 'PENDING_REVIEW'
+                ORDER BY m.submitted_at ASC
+                """)
+                .query((rs, rowNum) -> new PendingSubmissionResponse(
+                        rs.getObject("submission_id", UUID.class),
+                        rs.getObject("qualification_id", UUID.class),
+                        rs.getString("candidate_user_id"),
+                        rs.getObject("skill_id", UUID.class),
+                        rs.getString("skill_slug"),
+                        rs.getObject("level_id", UUID.class),
+                        rs.getString("level_code"),
+                        rs.getInt("attempt_number"),
+                        rs.getString("lesson_objective"),
+                        rs.getString("recording_or_artifact_url"),
+                        rs.getString("self_check_summary"),
+                        rs.getObject("submitted_at", OffsetDateTime.class)))
+                .list();
     }
 
     private static String baseSelectQuery() {

@@ -13,7 +13,13 @@ public final class QualificationDtos {
 
     public enum ReviewDecision {
         APPROVE,
-        REJECT
+        APPROVED,
+        REJECT,
+        REJECTED;
+
+        public boolean isApproval() {
+            return this == APPROVE || this == APPROVED;
+        }
     }
 
     public record CreateQualificationRequest(
@@ -47,6 +53,21 @@ public final class QualificationDtos {
     public record MiniClassReviewRequest(
             @NotNull ReviewDecision decision,
             @NotBlank @Size(min = 10, max = 2000) String reviewerComments) {
+    }
+
+    public record PendingSubmissionResponse(
+            UUID submissionId,
+            UUID qualificationId,
+            String candidateUserId,
+            UUID skillId,
+            String skillSlug,
+            UUID levelId,
+            String levelCode,
+            int attemptNumber,
+            String lessonObjective,
+            String recordingOrArtifactUrl,
+            String selfCheckSummary,
+            OffsetDateTime submittedAt) {
     }
 }
 

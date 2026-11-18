@@ -228,7 +228,7 @@ components:
           type: string
         accessToken:
           type: string
-          description: Token JWT firmado de LiveKit con TTL máximo de 20 minutos, limitado a este usuario y sala.
+          description: Token JWT firmado de LiveKit con TTL máximo de 15 minutos, limitado a este usuario y sala.
         expiresAt:
           type: string
           format: date-time

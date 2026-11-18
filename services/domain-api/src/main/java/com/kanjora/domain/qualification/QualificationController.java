@@ -3,12 +3,15 @@ package com.kanjora.domain.qualification;
 import com.kanjora.domain.qualification.QualificationDtos.CreateQualificationRequest;
 import com.kanjora.domain.qualification.QualificationDtos.MiniClassReviewRequest;
 import com.kanjora.domain.qualification.QualificationDtos.MiniClassSubmissionRequest;
+import com.kanjora.domain.qualification.QualificationDtos.PendingSubmissionResponse;
 import com.kanjora.domain.qualification.QualificationDtos.QualificationResponse;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +41,11 @@ public class QualificationController {
             @PathVariable UUID qualificationId,
             @Valid @RequestBody MiniClassSubmissionRequest request) {
         return qualificationService.submitMiniClass(jwt.getSubject(), qualificationId, request);
+    }
+
+    @GetMapping("/api/v1/admin/mini-class-submissions/pending")
+    public List<PendingSubmissionResponse> listPendingSubmissions() {
+        return qualificationService.listPendingSubmissions();
     }
 
     @PostMapping("/api/v1/admin/mini-class-submissions/{submissionId}/review")

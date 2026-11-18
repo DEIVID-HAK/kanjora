@@ -18,7 +18,7 @@ flowchart TD
     end
 
     subgraph KeycloakIdP ["Keycloak 26.0 (OpenID Connect / OAuth2)"]
-        UserAuth["Realm: kanjora\nClient: kanjora-frontend\nFlow: Authorization Code + PKCE"]
+        UserAuth["Realm: kanjora\nClient: kanjora-web\nFlow: Authorization Code + PKCE"]
         ServiceAuth["Realm: kanjora\nClient: kanjora-sessions-service\nFlow: Client Credentials Grant\nScope: roles (ROLE_INTERNAL_SESSIONS_SERVICE)"]
     end
 
@@ -86,13 +86,12 @@ Tanto Java (Spring Boot) como Go (Sessions API) implementan el estándar de la I
 
 ```json
 {
-  "type": "https://api.kanjora.com/errors/NOT_ENOUGH_AVAILABLE_TIME",
-  "title": "Tiempo común insuficiente",
+  "type": "https://kanjora.dev/errors/no_common_availability",
+  "title": "Conflicto de estado o regla de negocio",
   "status": 409,
-  "detail": "La coincidencia recíproca con este candidato no alcanza el mínimo de 30 minutos semanales en común.",
-  "instance": "/api/v1/matches",
-  "code": "NOT_ENOUGH_AVAILABLE_TIME",
-  "timestamp": "2026-11-18T07:15:00Z"
+  "detail": "La pareja no comparte al menos 30 minutos semanales de disponibilidad común.",
+  "instance": "/api/v1/exchange-proposals",
+  "errorCode": "NO_COMMON_AVAILABILITY"
 }
 ```
 

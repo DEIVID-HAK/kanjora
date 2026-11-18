@@ -169,6 +169,8 @@ La siguiente matriz conecta los requisitos funcionales con los casos de uso, los
 | **RF-16** | CU-05 | Sessions API (Go) | `POST /cancel`, `PATCH /reschedule` | `sessions`, `session_agreements` | Sprint 4 / Reprogramación sin sanción |
 | **RF-17** | CU-07 | Sessions API -> Domain | `POST /internal/v1/exchanges/{id}/session-facts` | `session_outbox_facts` -> `session_fact_reports` | Sprint 5 / Ingestión Outbox Idempotente |
 | **RF-18** | CU-07 | Domain API (Java) | `PUT /exchanges/{id}/confirmations/me` | `exchange_confirmations`, `exchange_resolutions`, `confirmed_exchange_facts_log` | Sprint 5 / Cierre bilateral y auditoría |
+| **RF-19** | CU-07 | Domain API (Java) | `GET /api/v1/exchanges/history/me` | `exchange_proposals`, `exchange_resolutions`, `exchange_confirmations` | Sprint 5 / Historial del participante |
+| **RF-20** | CU-02/07 | Domain API (Java) | `GET /api/v1/admin/metrics/pilot` | `user_profiles`, `teaching_qualifications`, `exchange_proposals`, `confirmed_exchange_facts_log` | Sprint 6 / Métricas del piloto |
 
 ---
 
@@ -258,7 +260,7 @@ flowchart LR
   5. El sistema construye el objeto `MatchExplanation` detallando horas comunes en UTC y número de temas en común.
   6. Se devuelven las parejas ordenadas descendentemente por score.
 * **Flujo Alternativo:**
-  * **2a. No existen parejas que cumplan la reciprocidad o el horario común:** El sistema responde con `hasMatches: false`, un mensaje pedagógico claro indicando que la búsqueda permanece activa, y **nunca** fuerza coincidencias débiles ni permite pagar para falsear resultados.
+  * **2a. No existen parejas que cumplan la reciprocidad o el horario común:** El sistema responde con `hasValidMatches: false`, un mensaje pedagógico claro indicando que la búsqueda permanece activa, y **nunca** fuerza coincidencias débiles ni permite pagar para falsear resultados.
 
 ---
 
@@ -895,7 +897,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     container_name: kanjora-keycloak
-    command: ["start-dev"]
+    command: ["start-dev", "--import-realm"]
     ports:
       - "8180:8180"
     environment:
@@ -903,6 +905,8 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin_dev_pwd
       KC_HTTP_PORT: 8180
       KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./infra/keycloak/kanjora-realm.json:/opt/keycloak/data/import/kanjora-realm.json:ro
 
   livekit:
     image: livekit/livekit-server:v1.7
@@ -919,24 +923,33 @@ services:
 ### 9.2 Guía de Puesta en Marcha Paso a Paso
 
 1. **Levantar la Infraestructura Base:**
-   ```bash
-   docker-compose up -d
+   ```powershell
+   docker compose up -d
    ```
-   *Verificar que PostgreSQL inicialice automáticamente los dos esquemas aislados (`domain` y `sessions`) mediante `init-isolation.sql`.*
+   *PostgreSQL inicializa los esquemas aislados (`domain` y `sessions`) mediante `init-isolation.sql` y Keycloak importa `infra/keycloak/kanjora-realm.json`.*
 
-2. **Compilar y Ejecutar Domain API (Java 21 / Spring Boot):**
-   ```bash
+2. **Compilar, Probar y Ejecutar Domain API (Java 21 / Spring Boot):**
+   ```powershell
    cd services/domain-api
-   ./mvnw clean install
-   ./mvnw spring-boot:run
+   mvn test
+   mvn spring-boot:run
    ```
-   *Flyway ejecutará de forma automática las migraciones `V1__init_domain_schema.sql` y `V2__seed_pilot_catalog.sql` en el esquema `domain`.*
+   *Flyway ejecuta automáticamente `V1__init_domain_schema.sql` y `V2__seed_pilot_catalog.sql` en el esquema `domain`.*
 
-3. **Ejecutar Pruebas Automatizadas de Seguridad y Contratos:**
-   ```bash
-   ./mvnw test
+3. **Probar y Ejecutar Sessions API (Go 1.22+):**
+   ```powershell
+   cd services/sessions-api
+   go mod tidy
+   go test -v ./...
+   go run .
    ```
-   *Ejecuta las suites de pruebas unitarias y de integración que verifican las reglas de rechazo de seguridad, aislamiento de perfiles y unicidad de propuestas.*
+   *Al iniciar, Sessions API ejecuta `migrations/001_init_sessions_schema.sql` en el esquema `sessions` y obtiene automáticamente su token M2M contra Keycloak.*
+
+4. **Ejecutar el Recorrido E2E del Piloto:**
+   ```powershell
+   .\scripts\e2e-pilot-journey.ps1
+   ```
+   *Verifica de principio a fin los pasos de registro, perfil, habilitación humana, matching recíproco, propuesta, agenda, sala LiveKit, outbox y confirmación bilateral.*
 
 ---
 

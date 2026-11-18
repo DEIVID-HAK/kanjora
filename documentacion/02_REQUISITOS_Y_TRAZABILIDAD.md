@@ -155,3 +155,5 @@ mindmap
 | **RF-16** | Funcional | CU-05 | Sessions API (Go) | `POST /cancel`, `PATCH /reschedule` | `sessions`, `session_agreements` | Sprint 4 / Test cancelación sin penalidad |
 | **RF-17** | Funcional | CU-07 | Sessions API $\rightarrow$ Java | `POST /internal/v1/exchanges/{id}/session-facts` | `session_outbox_facts` $\rightarrow$ `session_fact_reports` | Sprint 5 / Test Outbox e Idempotencia HTTP |
 | **RF-18** | Funcional | CU-07 | Domain API (Java) | `PUT /exchanges/{id}/confirmations/me` | `exchange_confirmations`, `exchange_resolutions`, `confirmed_exchange_facts_log` | Sprint 5 / Test Cierre Bilateral |
+| **RF-19** | Funcional | CU-07 | Domain API (Java) | `GET /api/v1/exchanges/history/me` | `exchange_proposals`, `exchange_resolutions`, `exchange_confirmations` | Sprint 5 / Historial del Participante |
+| **RF-20** | Funcional | CU-02/07 | Domain API (Java) | `GET /api/v1/admin/metrics/pilot` | `user_profiles`, `teaching_qualifications`, `exchange_proposals`, `confirmed_exchange_facts_log` | Sprint 6 / Métricas del Piloto |

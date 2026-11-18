@@ -121,10 +121,9 @@ flowchart TD
         subgraph Controllers ["Capa de Controladores REST"]
             CatCtrl["CatalogController\n(/api/v1/catalog)"]
             ProfCtrl["ProfileController\n(/api/v1/profiles)"]
-            QualCtrl["QualificationController\n(/api/v1/teaching-qualifications)"]
+            QualCtrl["QualificationController\n(/api/v1/teaching-qualifications & /api/v1/admin/mini-class-submissions)"]
             MatchCtrl["MatchingController\n(/api/v1/matches)"]
-            PropCtrl["ProposalController\n(/api/v1/exchange-proposals)"]
-            ConfCtrl["ConfirmationController\n(/api/v1/exchanges & /internal/v1)"]
+            PropCtrl["ProposalController\n(/api/v1/exchange-proposals, /api/v1/exchanges & /internal/v1)"]
         end
 
         subgraph Services ["Capa de Servicios de Negocio"]
@@ -152,8 +151,8 @@ flowchart TD
     QualCtrl --> QualSvc --> QualRepo
     MatchCtrl --> MatchSvc --> MatchRepo
     PropCtrl --> PropSvc --> PropRepo
-    ConfCtrl --> ConfSvc --> ConfRepo
-    ConfCtrl --> FactSvc --> ConfRepo
+    PropCtrl --> ConfSvc --> ConfRepo
+    PropCtrl --> FactSvc --> ConfRepo
 ```
 
 ---

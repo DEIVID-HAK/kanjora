@@ -111,7 +111,7 @@ flowchart TD
   5. Se construye el resumen explicativo `MatchExplanation` para cada candidato.
   6. El sistema devuelve la lista ordenada descendentemente por score.
 * **Flujos Alternativos:**
-  * **2a. Inexistencia de Parejas Válidas:** Si ningún candidato cumple con la coincidencia recíproca o la ventana horaria mínima, el sistema devuelve `hasMatches: false` con el mensaje: *"Aún no hay parejas con coincidencia recíproca válida y disponibilidad común. Tu búsqueda sigue activa."* El sistema **nunca** inventa falsas coincidencias ni promueve usuarios por pago.
+  * **2a. Inexistencia de Parejas Válidas:** Si ningún candidato cumple con la coincidencia recíproca o la ventana horaria mínima, el sistema devuelve `hasValidMatches: false` con el mensaje: *"Aún no hay parejas con coincidencia recíproca válida y disponibilidad común. Tu búsqueda sigue activa."* El sistema **nunca** inventa falsas coincidencias ni promueve usuarios por pago.
 
 ---
 

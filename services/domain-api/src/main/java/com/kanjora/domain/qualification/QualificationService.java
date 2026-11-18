@@ -4,11 +4,12 @@ import com.kanjora.domain.catalog.CatalogRepository;
 import com.kanjora.domain.qualification.QualificationDtos.CreateQualificationRequest;
 import com.kanjora.domain.qualification.QualificationDtos.MiniClassReviewRequest;
 import com.kanjora.domain.qualification.QualificationDtos.MiniClassSubmissionRequest;
+import com.kanjora.domain.qualification.QualificationDtos.PendingSubmissionResponse;
 import com.kanjora.domain.qualification.QualificationDtos.QualificationResponse;
-import com.kanjora.domain.qualification.QualificationDtos.ReviewDecision;
 import com.kanjora.domain.qualification.QualificationRepository.SubmissionContext;
 import com.kanjora.domain.shared.DomainException;
 import java.net.URI;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -117,7 +118,7 @@ public class QualificationService {
                     "Esta entrega de mini clase ya fue revisada previamente.");
         }
 
-        String targetStatus = req.decision() == ReviewDecision.APPROVE ? "APPROVED" : "REJECTED";
+        String targetStatus = req.decision().isApproval() ? "APPROVED" : "REJECTED";
         qualificationRepository.applyReviewDecision(
                 submissionId,
                 submission.qualificationId(),
@@ -128,6 +129,10 @@ public class QualificationService {
 
         return qualificationRepository.findById(submission.qualificationId())
                 .orElseThrow(() -> DomainException.notFound("QUALIFICATION_NOT_FOUND", "Habilitación no encontrada."));
+    }
+
+    public List<PendingSubmissionResponse> listPendingSubmissions() {
+        return qualificationRepository.findPendingSubmissions();
     }
 
     private void validateArtifactUri(String rawUrl) {
