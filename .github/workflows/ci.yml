@@ -2,9 +2,16 @@ name: Kanjora CI Pipeline
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: ["main", "devop"]
   pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify-contracts:
@@ -17,16 +24,22 @@ jobs:
       - name: Setup Node.js for Spectral
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      - name: Install Spectral Linter
-        run: npm install -g @stoplight/spectral-cli
+      - name: Lint OpenAPI Contracts
+        run: >-
+          npx --yes @stoplight/spectral-cli@6 lint
+          "contracts/openapi/*.yaml"
+          --ruleset .spectral.yaml
+          --fail-severity=error
 
-      - name: Lint Domain OpenAPI Contract
-        run: spectral lint contracts/openapi/domain-api-v1.yaml --ruleset https://unpkg.com/@stoplight/spectral-rulesets/dist/oas.js || true
-
-      - name: Lint Sessions OpenAPI Contract
-        run: spectral lint contracts/openapi/sessions-api-v1.yaml --ruleset https://unpkg.com/@stoplight/spectral-rulesets/dist/oas.js || true
+      - name: Reject An Invalid Contract
+        run: |
+          if npx --yes @stoplight/spectral-cli@6 lint tests/fixtures/spectral/invalid-contract.yaml \
+              --ruleset .spectral.yaml --fail-severity=error; then
+            echo "::error::Spectral accepted an invalid contract; the contract gate is not effective."
+            exit 1
+          fi
 
   test-domain-api:
     name: Domain API (Java 21 / Spring Boot) Tests
@@ -53,18 +66,41 @@ jobs:
       - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'maven'
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
 
-      - name: Execute Flyway Isolation Migration
+      - name: Validate Schema Isolation SQL
         run: |
           sudo apt-get install -y postgresql-client
-          PGPASSWORD=postgres_admin_dev_pwd psql -h localhost -U postgres_admin -d kanjora -f infra/postgres/init-isolation.sql
+          PGPASSWORD=postgres_admin_dev_pwd psql -h localhost -U postgres_admin -d kanjora \
+            -v ON_ERROR_STOP=1 -f infra/postgres/init-isolation.sql
 
       - name: Run Domain API Unit & Integration Tests
         working-directory: services/domain-api
-        run: ./mvnw clean test
+        run: mvn -B clean test
+
+  test-sessions-api:
+    name: Sessions API (Go) Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/sessions-api
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/sessions-api/go.mod
+          cache-dependency-path: services/sessions-api/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run Tests with Race Detector
+        run: go test -race ./...
 
   docker-compose-smoketest:
     name: Docker Compose Smoke Test
@@ -73,10 +109,28 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Start Environment with Docker Compose
-        run: docker compose up -d
+      - name: Start Environment
+        run: docker compose up -d --wait --wait-timeout 240
 
-      - name: Wait for Containers to be Healthy
+      - name: Assert Keycloak Realm Is Served
         run: |
-          sleep 15
-          docker compose ps
+          curl -fsS --retry 20 --retry-delay 3 --retry-connrefused \
+            http://localhost:8180/realms/kanjora | grep -q '"realm" *: *"kanjora"'
+
+      - name: Assert PostgreSQL Accepts Connections
+        run: pg_isready -h localhost -p 5432 -U postgres_admin
+
+      - name: Assert LiveKit Port Is Listening
+        run: timeout 10 bash -c '</dev/tcp/127.0.0.1/7880'
+
+      - name: Show Container State
+        if: always()
+        run: docker compose ps -a
+
+      - name: Dump Logs On Failure
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Tear Down
+        if: always()
+        run: docker compose down -v

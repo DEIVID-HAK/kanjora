@@ -1,0 +1,5 @@
+openapi: 3.0.3
+info:
+  title: Invalid contract fixture
+  description: Intentionally invalid document. It has no paths, webhooks or components, so Spectral must reject it.
+  version: 1.0.0
