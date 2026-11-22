@@ -1,0 +1,31 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: kanjora-domain-api
+  mvc:
+    problemdetails:
+      enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:kanjora}?currentSchema=domain
+    username: ${DB_USER:kanjora_domain_app}
+    password: ${DB_PASSWORD:kanjora_domain_dev_pwd}
+    hikari:
+      maximum-pool-size: 10
+  flyway:
+    enabled: true
+    schemas: domain
+    default-schema: domain
+    create-schemas: false
+    locations: classpath:db/migration
+
+kanjora:
+  security:
+    issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8180/realms/kanjora}
+    jwk-set-uri: ${OIDC_JWK_SET_URI:http://localhost:8180/realms/kanjora/protocol/openid-connect/certs}
+    required-audience: ${OIDC_REQUIRED_AUDIENCE:kanjora-api}
+
